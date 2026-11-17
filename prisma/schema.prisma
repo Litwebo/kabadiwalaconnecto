@@ -1,0 +1,328 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  COLLECTOR
+  RECYCLER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum ServiceMode {
+  PICKUP
+  DELIVERY
+  BOTH
+}
+
+enum LotStatus {
+  DRAFT
+  LISTED
+  BOOKED
+  COMPLETED
+  CANCELLED
+}
+
+enum BookingStatus {
+  REQUESTED
+  ACCEPTED
+  HANDED_OVER
+  PAID
+  COMPLETED
+  DECLINED
+  EXPIRED
+  CANCELLED
+  DISPUTED
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+}
+
+enum PaymentStatus {
+  PENDING
+  MARKED_PAID
+  CONFIRMED
+  DISPUTED
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+model User {
+  id         String     @id @default(cuid())
+  phone      String     @unique
+  name       String
+  role       UserRole   @default(COLLECTOR)
+  language   String     @default("en")
+  areaLabel  String
+  lat        Float
+  lng        Float
+  upiId      String?
+  status     UserStatus @default(ACTIVE)
+  consentAt  DateTime?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  recyclerProfile RecyclerProfile?
+  lots            Lot[]            @relation("CollectorLots")
+  bookings        Booking[]        @relation("RecyclerBookings")
+  ledgerEntries   LedgerEntry[]
+  notifications   Notification[]
+  auditLogs       AuditLog[]
+  disputesRaised  Dispute[]        @relation("DisputeRaiser")
+  disputesSolved  Dispute[]        @relation("DisputeResolver")
+  referenceRates  ReferenceRate[]
+}
+
+model RecyclerProfile {
+  id                   String             @id @default(cuid())
+  userId               String             @unique
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessName         String
+  registrationNumber   String
+  authorisationDocUrls String[]
+  verificationStatus   VerificationStatus @default(PENDING)
+  rejectionReason      String?
+  verifiedAt           DateTime?
+  registrationExpiry   DateTime
+  serviceRadiusKm      Float              @default(15)
+  lat                  Float
+  lng                  Float
+  address              String
+  mode                 ServiceMode        @default(BOTH)
+  minQtyKg             Float              @default(5)
+  acceptsHazardous     Boolean            @default(false)
+  slotRules            Json
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  rates RecyclerRate[]
+}
+
+model Category {
+  id            String   @id @default(cuid())
+  slug          String   @unique
+  name          String
+  nameHi        String
+  nameKn        String
+  hazardous     Boolean  @default(false)
+  iconKey       String
+  co2FactorPerKg Float   @default(1.8)
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  referenceRates ReferenceRate[]
+  recyclerRates  RecyclerRate[]
+  lotItems       LotItem[]
+}
+
+model ReferenceRate {
+  id            String   @id @default(cuid())
+  categoryId    String
+  category      Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  pricePerKg    Float
+  effectiveFrom DateTime @default(now())
+  setByAdminId  String
+  setByAdmin    User     @relation(fields: [setByAdminId], references: [id])
+}
+
+model RecyclerRate {
+  id         String          @id @default(cuid())
+  recyclerId String
+  recycler   RecyclerProfile @relation(fields: [recyclerId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   Category        @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  pricePerKg Float
+  active     Boolean         @default(true)
+  updatedAt  DateTime        @updatedAt
+
+  @@unique([recyclerId, categoryId])
+}
+
+model Lot {
+  id          String    @id @default(cuid())
+  collectorId String
+  collector   User      @relation("CollectorLots", fields: [collectorId], references: [id])
+  status      LotStatus @default(DRAFT)
+  lat         Float
+  lng         Float
+  areaLabel   String
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  items    LotItem[]
+  photos   LotPhoto[]
+  bookings Booking[]
+}
+
+model LotItem {
+  id         String   @id @default(cuid())
+  lotId      String
+  lot        Lot      @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+  declaredKg Float
+
+  @@unique([lotId, categoryId])
+}
+
+model LotPhoto {
+  id        String   @id @default(cuid())
+  lotId     String
+  lot       Lot      @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  url       String
+  createdAt DateTime @default(now())
+}
+
+model Booking {
+  id               String        @id @default(cuid())
+  lotId            String
+  lot              Lot           @relation(fields: [lotId], references: [id])
+  recyclerId       String
+  recycler         User          @relation("RecyclerBookings", fields: [recyclerId], references: [id])
+  status           BookingStatus @default(REQUESTED)
+  mode             ServiceMode
+  slotStart        DateTime
+  slotEnd          DateTime
+  rateSnapshot     Json
+  estimatedTotal   Float
+  transportCost    Float         @default(0)
+  handoverCodeHash String
+  expiresAt        DateTime
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  handover Handover?
+  receipt  Receipt?
+  payment  Payment?
+  disputes Dispute[]
+}
+
+model Handover {
+  id                   String    @id @default(cuid())
+  bookingId            String    @unique
+  booking              Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  weighedItems         Json
+  collectorConfirmedAt DateTime?
+  recyclerConfirmedAt  DateTime?
+  lat                  Float
+  lng                  Float
+  accuracyM            Float
+  photoUrl             String
+  confirmedAt          DateTime?
+}
+
+model Receipt {
+  id        String   @id @default(cuid())
+  bookingId String   @unique
+  booking   Booking  @relation(fields: [bookingId], references: [id])
+  payload   Json
+  signature String
+  pdfUrl    String
+  issuedAt  DateTime @default(now())
+
+  ledgerEntry LedgerEntry?
+}
+
+model Payment {
+  id                   String        @id @default(cuid())
+  bookingId            String        @unique
+  booking              Booking       @relation(fields: [bookingId], references: [id])
+  method               PaymentMethod
+  amount               Float
+  upiRef               String?
+  recyclerMarkedAt     DateTime?
+  collectorConfirmedAt DateTime?
+  status               PaymentStatus @default(PENDING)
+}
+
+model LedgerEntry {
+  id            String        @id @default(cuid())
+  collectorId   String
+  collector     User          @relation(fields: [collectorId], references: [id])
+  receiptId     String        @unique
+  receipt       Receipt       @relation(fields: [receiptId], references: [id])
+  grossAmount   Float
+  transportCost Float
+  netAmount     Float
+  kg            Float
+  co2SavedKg    Float         @default(0)
+  date          DateTime      @default(now())
+  method        PaymentMethod
+}
+
+model Dispute {
+  id             String        @id @default(cuid())
+  bookingId      String
+  booking        Booking       @relation(fields: [bookingId], references: [id])
+  raisedById     String
+  raisedBy       User          @relation("DisputeRaiser", fields: [raisedById], references: [id])
+  reason         String
+  status         DisputeStatus @default(OPEN)
+  resolutionNote String?
+  resolvedById   String?
+  resolvedBy     User?         @relation("DisputeResolver", fields: [resolvedById], references: [id])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  payload   Json
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String
+  actor     User     @relation(fields: [actorId], references: [id])
+  entity    String
+  entityId  String
+  action    String
+  meta      Json
+  at        DateTime @default(now())
+}
+
+model OtpCode {
+  id        String   @id @default(cuid())
+  phone     String
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+model PlatformSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}

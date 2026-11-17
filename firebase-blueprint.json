@@ -1,0 +1,165 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Registered collector, recycler, or admin account with DPDP consent.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "phone": { "type": "string", "maxLength": 20 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "role": { "type": "string", "enum": ["COLLECTOR", "RECYCLER", "ADMIN"] },
+        "language": { "type": "string", "enum": ["en", "hi", "kn"] },
+        "areaLabel": { "type": "string", "maxLength": 120 },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "upiId": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "enum": ["ACTIVE", "SUSPENDED", "DELETED"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "phone", "name", "role", "language", "areaLabel", "lat", "lng", "status", "createdAt"]
+    },
+    "RecyclerProfile": {
+      "title": "RecyclerProfile",
+      "description": "Verified recycler or refurbisher profile with registration and radius rules.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "businessName": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "registrationNumber": { "type": "string", "minLength": 3, "maxLength": 80 },
+        "verificationStatus": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED", "EXPIRED"] },
+        "registrationExpiry": { "type": "string", "format": "date-time" },
+        "serviceRadiusKm": { "type": "number" },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "address": { "type": "string", "maxLength": 300 },
+        "mode": { "type": "string", "enum": ["PICKUP", "DELIVERY", "BOTH"] },
+        "minQtyKg": { "type": "number" },
+        "acceptsHazardous": { "type": "boolean" }
+      },
+      "required": ["userId", "businessName", "registrationNumber", "verificationStatus", "registrationExpiry", "serviceRadiusKm", "lat", "lng", "address", "mode", "minQtyKg"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "E-waste material category with localized labels and hazard metadata.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "maxLength": 100 },
+        "nameHi": { "type": "string", "maxLength": 100 },
+        "nameKn": { "type": "string", "maxLength": 100 },
+        "hazardous": { "type": "boolean" },
+        "iconKey": { "type": "string", "maxLength": 40 },
+        "active": { "type": "boolean" }
+      },
+      "required": ["id", "name", "nameHi", "nameKn", "hazardous", "iconKey", "active"]
+    },
+    "Lot": {
+      "title": "Lot",
+      "description": "E-waste scrap lot listed by a collector.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "collectorId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "status": { "type": "string", "enum": ["DRAFT", "LISTED", "BOOKED", "COMPLETED", "CANCELLED"] },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "areaLabel": { "type": "string", "maxLength": 120 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "collectorId", "status", "lat", "lng", "areaLabel", "createdAt"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "Lot booking request and lifecycle between collector and recycler.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "lotId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "recyclerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "collectorId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "status": { "type": "string", "enum": ["REQUESTED", "ACCEPTED", "HANDED_OVER", "PAID", "COMPLETED", "DECLINED", "EXPIRED", "CANCELLED", "DISPUTED"] },
+        "mode": { "type": "string", "enum": ["PICKUP", "DELIVERY"] },
+        "estimatedTotal": { "type": "number" },
+        "transportCost": { "type": "number" }
+      },
+      "required": ["id", "lotId", "recyclerId", "collectorId", "status", "mode", "estimatedTotal", "transportCost"]
+    },
+    "Receipt": {
+      "title": "Receipt",
+      "description": "Tamper-evident HMAC-signed weighbridge handover receipt.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "bookingId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "signature": { "type": "string", "maxLength": 256 },
+        "issuedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "bookingId", "signature", "issuedAt"]
+    },
+    "LedgerEntry": {
+      "title": "LedgerEntry",
+      "description": "Completed payment record for collector earnings and carbon impact.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "collectorId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "receiptId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "grossAmount": { "type": "number" },
+        "transportCost": { "type": "number" },
+        "netAmount": { "type": "number" },
+        "kg": { "type": "number" },
+        "method": { "type": "string", "enum": ["CASH", "UPI"] }
+      },
+      "required": ["id", "collectorId", "receiptId", "grossAmount", "transportCost", "netAmount", "kg", "method"]
+    },
+    "Dispute": {
+      "title": "Dispute",
+      "description": "Weight or payment dispute raised during handover or settlement.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "bookingId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "raisedById": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "reason": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["OPEN", "UNDER_REVIEW", "RESOLVED", "DISMISSED"] }
+      },
+      "required": ["id", "bookingId", "raisedById", "reason", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profile documents (private PII isolated to owner/admin)."
+    },
+    "/recycler_profiles/{recyclerId}": {
+      "schema": { "$ref": "#/entities/RecyclerProfile" },
+      "description": "Recycler business profiles and verification state."
+    },
+    "/categories/{categoryId}": {
+      "schema": { "$ref": "#/entities/Category" },
+      "description": "Admin-managed e-waste categories."
+    },
+    "/lots/{lotId}": {
+      "schema": { "$ref": "#/entities/Lot" },
+      "description": "Collector e-waste lots."
+    },
+    "/bookings/{bookingId}": {
+      "schema": { "$ref": "#/entities/Booking" },
+      "description": "Recycler booking requests and handovers."
+    },
+    "/receipts/{receiptId}": {
+      "schema": { "$ref": "#/entities/Receipt" },
+      "description": "Publicly verifiable tamper-evident handover receipts."
+    },
+    "/ledger_entries/{entryId}": {
+      "schema": { "$ref": "#/entities/LedgerEntry" },
+      "description": "Collector earnings ledger entries."
+    },
+    "/disputes/{disputeId}": {
+      "schema": { "$ref": "#/entities/Dispute" },
+      "description": "Booking disputes for admin resolution."
+    }
+  }
+}

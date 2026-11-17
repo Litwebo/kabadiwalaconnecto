@@ -1,0 +1,203 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Primitive Helpers
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return isEmailVerified() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'vionpinto11@gmail.com'
+      );
+    }
+
+    // Validation Helpers
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'phone', 'name', 'role', 'language', 'areaLabel', 'lat', 'lng', 'status', 'createdAt'])
+        && data.keys().hasOnly(['id', 'phone', 'name', 'role', 'language', 'areaLabel', 'lat', 'lng', 'upiId', 'status', 'createdAt'])
+        && isValidId(data.id)
+        && data.phone is string && data.phone.size() >= 10 && data.phone.size() <= 20
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.role in ['COLLECTOR', 'RECYCLER']
+        && data.language in ['en', 'hi', 'kn']
+        && data.areaLabel is string && data.areaLabel.size() >= 1 && data.areaLabel.size() <= 120
+        && data.lat is number && data.lng is number
+        && data.status in ['ACTIVE', 'SUSPENDED', 'DELETED']
+        && (!('upiId' in data) || (data.upiId is string && data.upiId.size() <= 100));
+    }
+
+    function isValidLot(data) {
+      return data.keys().hasAll(['id', 'collectorId', 'status', 'lat', 'lng', 'areaLabel', 'createdAt'])
+        && data.keys().hasOnly(['id', 'collectorId', 'status', 'lat', 'lng', 'areaLabel', 'notes', 'createdAt'])
+        && isValidId(data.id)
+        && isValidId(data.collectorId)
+        && data.status in ['DRAFT', 'LISTED', 'BOOKED', 'COMPLETED', 'CANCELLED']
+        && data.lat is number && data.lng is number
+        && data.areaLabel is string && data.areaLabel.size() >= 1 && data.areaLabel.size() <= 120
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 500));
+    }
+
+    function isValidBooking(data) {
+      return data.keys().hasAll(['id', 'lotId', 'recyclerId', 'collectorId', 'status', 'mode', 'estimatedTotal', 'transportCost'])
+        && data.keys().hasOnly(['id', 'lotId', 'recyclerId', 'collectorId', 'status', 'mode', 'estimatedTotal', 'transportCost'])
+        && isValidId(data.id)
+        && isValidId(data.lotId)
+        && isValidId(data.recyclerId)
+        && isValidId(data.collectorId)
+        && data.status in ['REQUESTED', 'ACCEPTED', 'HANDED_OVER', 'PAID', 'COMPLETED', 'DECLINED', 'EXPIRED', 'CANCELLED', 'DISPUTED']
+        && data.mode in ['PICKUP', 'DELIVERY']
+        && data.estimatedTotal is number && data.estimatedTotal >= 0
+        && data.transportCost is number && data.transportCost >= 0;
+    }
+
+    function isValidDispute(data) {
+      return data.keys().hasAll(['id', 'bookingId', 'raisedById', 'reason', 'status'])
+        && data.keys().hasOnly(['id', 'bookingId', 'raisedById', 'reason', 'status'])
+        && isValidId(data.id)
+        && isValidId(data.bookingId)
+        && isValidId(data.raisedById)
+        && data.reason is string && data.reason.size() >= 3 && data.reason.size() <= 500
+        && data.status in ['OPEN', 'UNDER_REVIEW', 'RESOLVED', 'DISMISSED'];
+    }
+
+    // Connection test doc
+    match /test/{docId} {
+      allow get: if isValidId(docId);
+    }
+
+    // Users (PII strictly restricted to owner or admin)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId) && isEmailVerified() && isOwner(userId)
+        && isValidUser(incoming())
+        && incoming().id == userId
+        && incoming().createdAt == request.time;
+      allow update: if isValidId(userId) && isEmailVerified() && isValidUser(incoming()) && (
+        isAdmin() || (
+          isOwner(userId)
+          && incoming().id == existing().id
+          && incoming().role == existing().role
+          && incoming().createdAt == existing().createdAt
+          && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'language', 'areaLabel', 'lat', 'lng', 'upiId', 'status'])
+        )
+      );
+      allow delete: if isValidId(userId) && isAdmin();
+    }
+
+    // Categories (Public catalog read, admin write)
+    match /categories/{categoryId} {
+      allow get: if isValidId(categoryId);
+      allow list: if true;
+      allow write: if isAdmin();
+    }
+
+    // Recycler profiles
+    match /recycler_profiles/{recyclerId} {
+      allow get: if isValidId(recyclerId) && (isOwner(recyclerId) || isAdmin() || existing().verificationStatus == 'APPROVED');
+      allow list: if isAdmin() || resource.data.verificationStatus == 'APPROVED';
+      allow write: if isAdmin();
+    }
+
+    // Lots
+    match /lots/{lotId} {
+      allow get: if isValidId(lotId) && (isAdmin() || (isSignedIn() && existing().collectorId == request.auth.uid));
+      allow list: if isAdmin() || (isSignedIn() && resource.data.collectorId == request.auth.uid);
+      allow create: if isValidId(lotId) && isEmailVerified()
+        && isValidLot(incoming())
+        && incoming().id == lotId
+        && incoming().collectorId == request.auth.uid
+        && incoming().status == 'DRAFT'
+        && incoming().createdAt == request.time;
+      allow update: if isValidId(lotId) && isEmailVerified() && isValidLot(incoming()) && (
+        isAdmin() || (
+          existing().collectorId == request.auth.uid
+          && !(existing().status in ['COMPLETED', 'CANCELLED'])
+          && incoming().id == existing().id
+          && incoming().collectorId == existing().collectorId
+          && incoming().createdAt == existing().createdAt
+          && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'lat', 'lng', 'areaLabel', 'notes'])
+        )
+      );
+      allow delete: if isValidId(lotId) && isAdmin();
+    }
+
+    // Bookings
+    match /bookings/{bookingId} {
+      allow get: if isValidId(bookingId) && (isAdmin() || (isSignedIn() && (existing().collectorId == request.auth.uid || existing().recyclerId == request.auth.uid)));
+      allow list: if isAdmin() || (isSignedIn() && (resource.data.collectorId == request.auth.uid || resource.data.recyclerId == request.auth.uid));
+      allow create: if isValidId(bookingId) && isEmailVerified()
+        && isValidBooking(incoming())
+        && incoming().id == bookingId
+        && incoming().collectorId == request.auth.uid
+        && incoming().status == 'REQUESTED'
+        && exists(/databases/$(database)/documents/lots/$(incoming().lotId));
+      allow update: if isValidId(bookingId) && isEmailVerified() && isValidBooking(incoming()) && (
+        isAdmin() || (
+          !(existing().status in ['COMPLETED', 'CANCELLED', 'DECLINED', 'EXPIRED'])
+          && (existing().collectorId == request.auth.uid || existing().recyclerId == request.auth.uid)
+          && incoming().id == existing().id
+          && incoming().lotId == existing().lotId
+          && incoming().collectorId == existing().collectorId
+          && incoming().recyclerId == existing().recyclerId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['status'])
+        )
+      );
+      allow delete: if isValidId(bookingId) && isAdmin();
+    }
+
+    // Public receipts (no PII phone numbers stored)
+    match /receipts/{receiptId} {
+      allow get: if isValidId(receiptId);
+      allow list: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // Ledger entries (server/admin managed, owner readable)
+    match /ledger_entries/{entryId} {
+      allow get: if isValidId(entryId) && (isAdmin() || (isSignedIn() && existing().collectorId == request.auth.uid));
+      allow list: if isAdmin() || (isSignedIn() && resource.data.collectorId == request.auth.uid);
+      allow write: if isAdmin();
+    }
+
+    // Disputes
+    match /disputes/{disputeId} {
+      allow get: if isValidId(disputeId) && (isAdmin() || (isSignedIn() && existing().raisedById == request.auth.uid));
+      allow list: if isAdmin() || (isSignedIn() && resource.data.raisedById == request.auth.uid);
+      allow create: if isValidId(disputeId) && isEmailVerified()
+        && isValidDispute(incoming())
+        && incoming().id == disputeId
+        && incoming().raisedById == request.auth.uid
+        && incoming().status == 'OPEN'
+        && exists(/databases/$(database)/documents/bookings/$(incoming().bookingId));
+      allow update, delete: if isValidId(disputeId) && isAdmin();
+    }
+  }
+}

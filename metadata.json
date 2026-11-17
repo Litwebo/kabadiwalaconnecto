@@ -1,0 +1,6 @@
+{
+  "name": "Kabadiwala Connect",
+  "description": "Mobile-first e-waste marketplace connecting India's scrap collectors with verified recyclers, transparent pricing, weighbridge receipts, and earnings ledgers.",
+  "requestFramePermissions": ["geolocation", "camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
